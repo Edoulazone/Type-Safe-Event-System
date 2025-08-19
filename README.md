@@ -430,16 +430,6 @@ npm run test:watch
 npm run lint:fix
 ```
 
-### Structure des Commits
-
-```
-feat: add new event type
-fix: resolve memory leak in observables
-docs: update API documentation
-test: add integration tests
-refactor: improve type inference
-```
-
 ## Ressources d'Apprentissage
 
 ### Concepts TypeScript Avancés
