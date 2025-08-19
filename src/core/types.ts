@@ -1,273 +1,358 @@
-// On va définir ici tous les événements possibles dans notre système
+// REGISTRY D'ÉVÉNEMENTS - Plus strict et documenté
 export interface EventRegistry {
-	// Événements utilisateur
+	/** Événements d'authentification utilisateur */
 	'user:login': {
-		userId: string;
-		timestamp: Date;
-		ip?: string; // Le "?" est équivalent à ip: string | undefined, permet donc que cet élément soit optionnel
-		userAgent?: string;
+		readonly userId: string;
+		readonly timestamp: Date;
+		readonly ip?: string;
+		readonly userAgent?: string;
 	};
 
 	'user:logout': {
-		userId: string;
-		timestamp: Date;
-		duration: number;
+		readonly userId: string;
+		readonly timestamp: Date;
+		readonly duration: number; // en secondes
 	};
 
-	// Événements de commande
+	/** Événements de commande e-commerce */
 	'order:created': {
-		orderId: string;
-		userId: string;
-		amount: number;
-		items: string[];
-		currency?: string;
+		readonly orderId: string;
+		readonly userId: string;
+		readonly amount: number;
+		readonly items: readonly string[];
+		readonly currency?: string;
 	};
 
 	'order:updated': {
-		orderId: string;
-		changes: Partial<Order>; // Type utilitaire qui permet de modifier seulement une partie de Order
-		updatedBy: string;
+		readonly orderId: string;
+		readonly changes: Partial<Order>;
+		readonly updatedBy: string;
+		readonly timestamp: Date;
 	};
 
-	// Événement de paiement
+	/** Événements de paiement */
 	'payment:processed': {
-		paymentId: string;
-		orderId: string;
-		amount: number;
-		method: 'credit_card' | 'paypal' | 'bank_transfer';
-		status: 'success' | 'failed' | 'pending';
+		readonly paymentId: string;
+		readonly orderId: string;
+		readonly amount: number;
+		readonly method: PaymentMethod;
+		readonly status: PaymentStatus;
+		readonly timestamp: Date;
 	};
 
-	// Événement système
+	/** Événements système critiques */
 	'system:error': {
-		error: Error;
-		context: string;
-		severity: 'low' | 'medium' | 'high' | 'critical';
-		userId?: string;
+		readonly error: Error;
+		readonly context: string;
+		readonly severity: ErrorSeverity;
+		readonly userId?: string;
+		readonly stackTrace?: string;
 	};
 
-	// Événement de notification
+	/** Événements de notification */
 	'notification:sent': {
-		userId: string;
-		type: 'email' | 'sms' | 'push';
-		message: string;
-		templateId?: string;
+		readonly userId: string;
+		readonly type: NotificationType;
+		readonly message: string;
+		readonly templateId?: string;
+		readonly deliveredAt: Date;
 	};
 }
 
-// TYPES UTILITAIRES - Extraction automatique de types
-// Ces types sont "calculés" automatiquement à partir d'EventRegistry
+// TYPES UTILITAIRES - Plus expressifs
 export type EventNames = keyof EventRegistry;
 export type EventPayload<T extends EventNames> = EventRegistry[T];
 
-
-// STRUCTURE D'UN ÉVÉNEMENT - Le format standard
-// Chaque événement a cette structure, peu importe son type
-export interface Event<T extends EventNames> {
-	// Identite de l'event
-	type: T;
-	payload: EventPayload<T>;
-
-	// Metadonnees automatiques
-	id: string;
-	timestamp: Date;
-
-	// Metadonnees optionnelles
-	source?: string;
-	correlationId?: string;
-	metadata?: Record<string, unknown>;
+// ENUMS - Plus type-safe que les unions de strings
+export const enum PaymentMethod {
+	CREDIT_CARD = 'credit_card',
+	PAYPAL = 'paypal',
+	BANK_TRANSFER = 'bank_transfer',
+	CRYPTO = 'crypto'
 }
 
+export const enum PaymentStatus {
+	SUCCESS = 'success',
+	FAILED = 'failed',
+	PENDING = 'pending',
+	CANCELLED = 'cancelled'
+}
 
-// TYPES POUR LES LISTENERS - Comment écouter les événements
-// Un listener est une fonction qui réagit à un événement spécifique
+export const enum ErrorSeverity {
+	LOW = 'low',
+	MEDIUM = 'medium',
+	HIGH = 'high',
+	CRITICAL = 'critical'
+}
+
+export const enum NotificationType {
+	EMAIL = 'email',
+	SMS = 'sms',
+	PUSH = 'push',
+	SLACK = 'slack'
+}
+
+// STRUCTURE D'ÉVÉNEMENT - Plus stricte
+export interface Event<T extends EventNames> {
+	/** Type d'événement, sert de discriminant */
+	readonly type: T;
+	/** Données spécifiques à ce type d'événement */
+	readonly payload: EventPayload<T>;
+	/** Identifiant unique de l'événement */
+	readonly id: EventId;
+	/** Horodatage de création */
+	readonly timestamp: Date;
+	/** Source qui a émis l'événement */
+	readonly source?: string;
+	/** ID pour tracer les événements liés */
+	readonly correlationId?: CorrelationId;
+	/** Métadonnées additionnelles */
+	readonly metadata?: ReadonlyRecord<string, unknown>;
+}
+
+// BRANDED TYPES - Plus de sécurité
+export type EventId = string & { readonly __brand: 'EventId' };
+export type CorrelationId = string & { readonly __brand: 'CorrelationId' };
+export type UserId = string & { readonly __brand: 'UserId' };
+
+// TYPE HELPERS
+export type ReadonlyRecord<K extends string | number | symbol, V> = {
+	readonly [P in K]: V;
+};
+
+// LISTENERS - Plus typés
 export type EventListener<T extends EventNames> = (event: Event<T>) => void | Promise<void>;
 
-// Un listener générique qui peut écouter n'importe quel événement
-export type AnyEventListener = <T extends EventNames>(event: Event<T>) => void | Promise<void>;
+export type AnyEventListener = {
+	[K in EventNames]: (event: Event<K>) => void | Promise<void>;
+}[EventNames];
 
-
-// SUBSCRIPTION - Gérer l'abonnement aux événements
+// SUBSCRIPTION - Plus robuste
 export interface Subscription {
-	unsubscribe(): void;
+	readonly unsubscribe: () => void;
 	readonly closed: boolean;
+	readonly eventType?: EventNames;
+	readonly listenerId: string;
 }
 
-
-// TYPES POUR LE FILTERING - Filtrer les événements
-export interface EventFilter<T extends EventNames> {
-	type?: T | T[];
-	source?: string | string[];
-	userId?: string;
-	correlationId?: string;
-	custom?: (event: Event<T>) => boolean;
-}
-
-
-// RÉSULTATS D'ÉMISSION - Feedback quand on émet un événement
+// RÉSULTATS D'ÉMISSION - Plus détaillés
 export interface EmitResult<T extends EventNames> {
-	eventId: string;
-	type: T;
-	listenersNotified: number;
-	errors: EmitError[];
-	duration: number;
+	readonly eventId: EventId;
+	readonly type: T;
+	readonly listenersNotified: number;
+	readonly errors: readonly EmitError[];
+	readonly duration: number;
+	readonly success: boolean;
 }
 
 export interface EmitError {
-	listener: string;
-	error: Error;
-	event: Event<any>;
+	readonly listenerId: string;
+	readonly error: Error;
+	readonly event: Event<any>;
+	readonly timestamp: Date;
 }
 
-
-// INTERFACES MÉTIER - Types pour nos domaines
-// Ces interfaces définissent les objets métier utilisés dans les événements
-export interface Order {
-	id: string;
-	userId: string;
-	amount: number;
-	currency: string;
-	status: 'confirmed' | 'shipped' | 'delivered' | 'pending' | 'cancelled';
-	items: OrderItem[];
-	createdAt: Date;
-	updatedAt: Date;
-}
-
-export interface OrderItem {
-	productId: string;
-	name: string;
-	quantity: number;
-	unitPrice: number;
-	totalPrice: number;
-}
-
-export interface User {
-	id: string;
-	email: string;
-	name: string;
-	role: 'user' | 'admin' | 'moderator';
-	createdAt: Date;
-	lastLoginAt?: Date;
-}
-
-
-// TYPES POUR LES OPTIONS - Configuration des comportements
+// OPTIONS - Plus expressives
 export interface ListenerOptions {
-	maxCalls?: number;
-	timeout?: number;
-	condition?: (event: Event<any>) => boolean;
-	priority?: 'low' | 'normal' | 'high';
+	readonly maxCalls?: number;
+	readonly timeout?: number;
+	readonly condition?: (event: Event<any>) => boolean;
+	readonly priority?: ListenerPriority;
+	readonly once?: boolean;
 }
 
 export interface EmitOptions {
-	id?: string;
-	source?: string;
-	correlationId?: string;
-	metadata?: Record<string, unknown>;
-	timeout?: number;
+	readonly id?: EventId;
+	readonly source?: string;
+	readonly correlationId?: CorrelationId;
+	readonly metadata?: ReadonlyRecord<string, unknown>;
+	readonly timeout?: number;
+	readonly skipMiddleware?: boolean;
 }
 
+export const enum ListenerPriority {
+	LOW = 1,
+	NORMAL = 5,
+	HIGH = 10,
+	CRITICAL = 15,
+	EMERGENCY = 20
+}
 
-// TYPES AVANCÉS - Utilisation de TypeScript avancé
-// Type conditionnel : si T est un type d'événement user, extraire userId
-export type ExtractUserId<T extends EventNames> =
-	EventRegistry[T] extends {userId: string }
-	? EventRegistry[T]['userId']
-	: never;
+// INTERFACES MÉTIER - Plus complètes
+export interface Order {
+	readonly id: string;
+	readonly userId: UserId;
+	readonly amount: number;
+	readonly currency: string;
+	readonly status: OrderStatus;
+	readonly items: readonly OrderItem[];
+	readonly createdAt: Date;
+	readonly updatedAt: Date;
+	readonly version: number; // Pour optimistic locking
+}
 
-// Type pour les événements qui ont un userId
+export interface OrderItem {
+	readonly productId: string;
+	readonly name: string;
+	readonly quantity: number;
+	readonly unitPrice: number;
+	readonly totalPrice: number;
+	readonly sku?: string;
+}
+
+export const enum OrderStatus {
+	PENDING = 'pending',
+	CONFIRMED = 'confirmed',
+	SHIPPED = 'shipped',
+	DELIVERED = 'delivered',
+	CANCELLED = 'cancelled'
+}
+
+export interface User {
+	readonly id: UserId;
+	readonly email: string;
+	readonly name: string;
+	readonly role: UserRole;
+	readonly createdAt: Date;
+	readonly lastLoginAt?: Date;
+	readonly isActive: boolean;
+}
+
+export const enum UserRole {
+	USER = 'user',
+	ADMIN = 'admin',
+	MODERATOR = 'moderator',
+	SYSTEM = 'system'
+}
+
+// TYPES AVANCÉS - Plus utiles
+/** Extrait les événements qui ont une propriété userId */
 export type UserEvents = {
-	[K in EventNames]: EventRegistry[K] extends {userId: string} ? K : never;
+	[K in EventNames]: EventRegistry[K] extends { userId: unknown } ? K : never;
 }[EventNames];
 
-// Type pour les événements système (sans userId)
+/** Extrait les événements système (sans userId) */
 export type SystemEvents = Exclude<EventNames, UserEvents>;
 
-// Mapped type : rendre toutes les propriétés d'un payload optionnelles
+/** Extrait le userId d'un événement s'il existe */
+export type ExtractUserId<T extends EventNames> =
+	EventRegistry[T] extends { userId: infer U } ? U : never;
+
+/** Rend toutes les propriétés d'un payload optionnelles */
 export type PartialEventPayload<T extends EventNames> = {
-	[K in keyof EventPayload<T>]?: EventPayload<T>[K];
+	readonly [K in keyof EventPayload<T>]?: EventPayload<T>[K];
 };
 
+/** Type conditionnel pour les événements critiques */
+export type CriticalEvents = {
+	[K in EventNames]: EventRegistry[K] extends { severity: ErrorSeverity.CRITICAL } ? K : never;
+}[EventNames];
 
-// CONSTANTES ET ENUMS - Valeurs prédéfinies
-export const EVENT_PRIORITIES = {
-	LOW: 1,
-	NORMAL: 5,
-	HIGH: 10,
-	CRITICAL: 15,
+// CONSTANTES - Plus organisées
+export const EVENT_CONFIG = {
+	PRIORITIES: {
+		LOW: 1,
+		NORMAL: 5,
+		HIGH: 10,
+		CRITICAL: 15,
+	},
+	TIMEOUTS: {
+		DEFAULT: 5000,
+		FAST: 1000,
+		SLOW: 30000,
+	},
+	LIMITS: {
+		MAX_LISTENERS_PER_EVENT: 100,
+		MAX_METADATA_SIZE: 1024,
+		MAX_PAYLOAD_SIZE: 10 * 1024, // 10KB
+	}
 } as const;
 
-export const DEFAULT_TIMEOUT = 5000;
-export const MAX_LISTENERS_PER_EVENT = 100;
-export const MAX_METADATA_SIZE = 1024;
-
-
-// TYPE GUARDS - Vérifications de types à runtime
-// Ces fonctions permettent de vérifier qu'un objet correspond bien à un type
-export function isEvent<T extends EventNames>(obj: any, eventType: T): obj is Event<T> {
+// TYPE GUARDS - Plus robustes
+export function isEvent<T extends EventNames>(
+	obj: unknown, 
+	eventType: T
+): obj is Event<T> {
 	return (
-		obj &&
 		typeof obj === 'object' &&
-		obj.type === eventType &&
-		typeof obj.id === 'string' &&
-		obj.timestamp instanceof Date &&
-		obj.payload !== undefined
+		obj !== null &&
+		'type' in obj &&
+		'payload' in obj &&
+		'id' in obj &&
+		'timestamp' in obj &&
+		(obj as any).type === eventType &&
+		typeof (obj as any).id === 'string' &&
+		(obj as any).timestamp instanceof Date
 	);
 }
 
-export function isValidEventType(type: string): type is EventNames {
+export function isValidEventType(type: unknown): type is EventNames {
 	const validTypes: EventNames[] = [
-	'user:login',
-	'user:logout', 
-	'order:created',
-	'order:updated',
-	'payment:processed',
-	'system:error',
-	'notification:sent'
+		'user:login',
+		'user:logout', 
+		'order:created',
+		'order:updated',
+		'payment:processed',
+		'system:error',
+		'notification:sent'
 	];
-	return validTypes.includes(type as EventNames);
+	return typeof type === 'string' && validTypes.includes(type as EventNames);
 }
 
-export function hasUserId(payload: any): payload is {userId: string} {
-	return payload && typeof payload.userId === 'string';
+export function hasUserId<T extends EventNames>(
+	event: Event<T>
+): event is Event<T> & { payload: { userId: string } } {
+	return 'userId' in event.payload && typeof (event.payload as any).userId === 'string';
 }
 
+export function isUserEvent(eventType: EventNames): eventType is UserEvents {
+	const userEventTypes: UserEvents[] = ['user:login', 'user:logout', 'order:created', 'notification:sent'];
+	return userEventTypes.includes(eventType as UserEvents);
+}
 
-// INTERFACES POUR L'EXTENSION - Permettre l'ajout de nouveaux types
-// Cette interface peut être étendue par d'autres modules
+export function isSystemEvent(eventType: EventNames): eventType is SystemEvents {
+	return !isUserEvent(eventType);
+}
+
+// FACTORY FUNCTIONS - Pour créer des objets typés
+export function createEventId(): EventId {
+	const timestamp = Date.now();
+	const random = Math.random().toString(36).substring(2, 8);
+	return `evt_${timestamp}_${random}` as EventId;
+}
+
+export function createCorrelationId(): CorrelationId {
+	return `corr_${Date.now()}_${Math.random().toString(36).substring(2, 8)}` as CorrelationId;
+}
+
+export function createUserId(id: string): UserId {
+	return id as UserId;
+}
+
+// VALIDATION SCHEMAS - Pour runtime validation
+export const EventSchemas = {
+	'user:login': {
+		userId: { type: 'string', minLength: 1 },
+		timestamp: { type: 'date' },
+		ip: { type: 'string', optional: true },
+		userAgent: { type: 'string', optional: true }
+	},
+	'order:created': {
+		orderId: { type: 'string', minLength: 1 },
+		userId: { type: 'string', minLength: 1 },
+		amount: { type: 'number', min: 0 },
+		items: { type: 'array', minLength: 1 },
+		currency: { type: 'string', optional: true }
+	}
+	// ... autres schémas
+} as const;
+
+// EXTENSION INTERFACE - Pour l'extensibilité
 declare global {
 	namespace EventSystem {
-		interface CustomEventRegistry {}
+		interface CustomEventRegistry extends EventRegistry {}
+		interface CustomMetadata extends Record<string, unknown> {}
 	}
 }
 
-// Fusion des types personnalisés avec les types de base
 export type ExtendedEventRegistry = EventRegistry & EventSystem.CustomEventRegistry;
-
-
-// EXEMPLE D'UTILISATION DE CES TYPES
-/*
-// Émission d'événement typé
-const loginEvent: Event<'user:login'> = {
-  type: 'user:login',
-  payload: {
-    userId: 'user123',
-    timestamp: new Date(),
-    ip: '192.168.1.1'
-  },
-  id: 'evt_123',
-  timestamp: new Date()
-};
-
-// Listener typé automatiquement
-const handleLogin: EventListener<'user:login'> = (event) => {
-  // event.payload est automatiquement typé comme { userId: string, timestamp: Date, ip?: string }
-  console.log(`User ${event.payload.userId} logged in from ${event.payload.ip}`);
-};
-
-// Filtre typé
-const userEventFilter: EventFilter<'user:login'> = {
-  type: 'user:login',
-  custom: (event) => event.payload.ip?.startsWith('192.168')
-};
-*/

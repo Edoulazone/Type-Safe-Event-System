@@ -27,15 +27,9 @@ src/
 │   ├── emitter.ts     # Event emitter principal
 │   └── observable.ts  # Observables et streams
 ├── middleware/         # Système de middleware
-│   ├── base.ts       # Middlewares de base (logging, validation, rate limit)
-│   └── ...
+│   └── base.ts       # Middlewares de base (logging, validation, rate limit)
 ├── plugins/           # Architecture de plugins
-│   ├── registry.ts   # Registry et gestion des plugins
-│   ├── persistence.ts # Plugin de persistance
-│   └── analytics.ts  # Plugin d'analytics
-├── utils/             # Utilitaires
-│   ├── type-guards.ts # Type guards avancés
-│   └── helpers.ts    # Fonctions utilitaires
+│   └── plugins.ts   # Registry et gestion des plugins, plugin d'analytics et plugin de persistance
 ├── examples/          # Exemples d'usage
 │   └── demo.ts       # Démonstration complète
 └── tests/             # Tests unitaires
