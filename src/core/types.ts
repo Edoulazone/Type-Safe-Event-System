@@ -3,14 +3,14 @@ export interface EventRegistry {
 	// Événements utilisateur
 	'user:login': {
 		userId: string;
-		timestamp: date;
+		timestamp: Date;
 		ip?: string; // Le "?" est équivalent à ip: string | undefined, permet donc que cet élément soit optionnel
 		userAgent?: string;
 	};
 
 	'user:logout': {
 		userId: string;
-		timestamp: date;
+		timestamp: Date;
 		duration: number;
 	};
 
@@ -98,7 +98,7 @@ export interface Subscription {
 export interface EventFilter<T extends EventNames> {
 	type?: T | T[];
 	source?: string | string[];
-	usedId?: string;
+	userId?: string;
 	correlationId?: string;
 	custom?: (event: Event<T>) => boolean;
 }
@@ -145,7 +145,7 @@ export interface User {
 	id: string;
 	email: string;
 	name: string;
-	role: 'user' | 'admin' | 'morderator';
+	role: 'user' | 'admin' | 'moderator';
 	createdAt: Date;
 	lastLoginAt?: Date;
 }
@@ -191,10 +191,10 @@ export type PartialEventPayload<T extends EventNames> = {
 
 // CONSTANTES ET ENUMS - Valeurs prédéfinies
 export const EVENT_PRIORITIES = {
-	LOW: 1;
-	NORMAL: 5;
-	HIGH: 10;
-	CRITICAL: 15;
+	LOW: 1,
+	NORMAL: 5,
+	HIGH: 10,
+	CRITICAL: 15,
 } as const;
 
 export const DEFAULT_TIMEOUT = 5000;
@@ -242,7 +242,7 @@ declare global {
 }
 
 // Fusion des types personnalisés avec les types de base
-export type ExtendedEventRegistry = EventRegistry && EventSystem.CustomEventRegistry;
+export type ExtendedEventRegistry = EventRegistry & EventSystem.CustomEventRegistry;
 
 
 // EXEMPLE D'UTILISATION DE CES TYPES
