@@ -1,16 +1,13 @@
-import { Event, EventNames, EventRegistry } from '../core/types.js';
+import { Event, EventNames, EventRegistry } from '../core/types';
 
-
-// INTERFACE DE BASE : Middleware
+// INTERFACE DE BASE
 export interface Middleware {
-	name?: string;                                        // Nom du middleware (pour debug)
-	before?(event: Event<any>): Promise<Event<any>>;      // Traitement AVANT émission
-	after?(event: Event<any>): Promise<void>;             // Traitement APRÈS émission
-	onError?(error: Error, event: Event<any>): Promise<void>; // Gestion d'erreurs
+	name?: string;
+	process?(event: Event<any>): Promise<Event<any>> | Event<any>;
+	onError?(error: Error): Promise<void> | void;
 }
 
-
-// LOGGING - Tracer tous les événements
+// LOGGING
 export class LoggingMiddleware implements Middleware {
 	name = 'logging';
 	
@@ -18,45 +15,32 @@ export class LoggingMiddleware implements Middleware {
 		private logger: Logger = console,
 		private options: LoggingOptions = {}
 	) {
-		// Options par défaut
 		this.options = {
-			logBefore: true,
-			logAfter: true,
 			includePayload: true,
 			logLevel: 'info',
 			...options
 		};
 	}
 
-	async before(event: Event<any>): Promise<Event<any>> {
-		if (this.options.logBefore) {
-			const message = this.formatEventMessage('EMIT', event);
-			this.log('info', message);
-		}
+	process(event: Event<any>): Event<any> {
+		const message = this.formatEventMessage(event);
+		this.log('info', message);
 		return event;
 	}
 
-	async after(event: Event<any>): Promise<void> {
-		if (this.options.logAfter) {
-			const message = this.formatEventMessage('PROCESSED', event);
-			this.log('info', message);
-		}
+	onError(error: Error): void {
+		this.log('error', `Middleware error: ${error.message}`);
 	}
 
-	async onError(error: Error, event: Event<any>): Promise<void> {
-		const message = `ERROR processing event ${event.type} (${event.id}): ${error.message}`;
-		this.log('error', message);
-	}
-
-	private formatEventMessage(action: string, event: Event<any>): string {
+	private formatEventMessage(event: Event<any>): string {
 		const timestamp = new Date().toISOString();
-		const baseMessage = `[${timestamp}] ${action}: ${event.type} (${event.id})`;
+		const baseMessage = `[${timestamp}] ${event.type} (${event.id})`;
 		
 		if (this.options.includePayload) {
 			const payload = this.options.sanitizePayload 
 				? this.options.sanitizePayload(event.payload)
 				: event.payload;
-			return `${baseMessage} | Payload: ${JSON.stringify(payload)}`;
+			return `${baseMessage} | ${JSON.stringify(payload)}`;
 		}
 		
 		return baseMessage;
@@ -91,13 +75,11 @@ export class LoggingMiddleware implements Middleware {
 	}
 }
 
-
-// VALIDATION - Vérifier les données
+// VALIDATION
 export class ValidationMiddleware implements Middleware {
 	name = 'validation';
 	private validators = new Map<EventNames, EventValidator<any>>();
 
-	// Ajoute un validateur pour un type d'événement spécifique
 	addValidator<T extends EventNames>(
 		eventType: T,
 		validator: EventValidator<EventRegistry[T]>
@@ -105,18 +87,11 @@ export class ValidationMiddleware implements Middleware {
 		this.validators.set(eventType, validator);
 	}
 
-	// Ajoute plusieurs validateurs d'un coup
-	addValidators(validators: Record<string, EventValidator<any>>): void {
-		Object.entries(validators).forEach(([eventType, validator]) => {
-			this.validators.set(eventType as EventNames, validator);
-		});
-	}
-
-	async before(event: Event<any>): Promise<Event<any>> {
+	process(event: Event<any>): Event<any> {
 		const validator = this.validators.get(event.type);
 		
 		if (validator) {
-			const result = await validator.validate(event.payload);
+			const result = validator.validate(event.payload);
 			
 			if (!result.isValid) {
 				throw new ValidationError(
@@ -130,32 +105,29 @@ export class ValidationMiddleware implements Middleware {
 		return event;
 	}
 
-	// Vérifie si un type d'événement a un validateur
 	hasValidator(eventType: EventNames): boolean {
 		return this.validators.has(eventType);
 	}
 
-	// Supprime un validateur
 	removeValidator(eventType: EventNames): void {
 		this.validators.delete(eventType);
 	}
 }
 
-
-// RATE LIMITING - Contrôler le trafic
+// RATE LIMITING
 export class RateLimitMiddleware implements Middleware {
 	name = 'rate-limit';
 	private eventCounts = new Map<string, EventCountInfo>();
 	private cleanupInterval: ReturnType<typeof setInterval>;
 
 	constructor(private config: RateLimitConfig) {
-		// Nettoyer les compteurs expirés toutes les minutes
+		// Nettoyer les compteurs expirés
 		this.cleanupInterval = setInterval(() => {
 			this.cleanup();
 		}, 60000);
 	}
 
-	async before(event: Event<any>): Promise<Event<any>> {
+	process(event: Event<any>): Event<any> {
 		const key = this.getKey(event);
 		const now = Date.now();
 		const countInfo = this.eventCounts.get(key) || {
@@ -223,7 +195,6 @@ export class RateLimitMiddleware implements Middleware {
 		expiredKeys.forEach(key => this.eventCounts.delete(key));
 	}
 
-	// Obtenir les statistiques actuelles
 	getStats(): RateLimitStats {
 		const now = Date.now();
 		const activeKeys = new Map<string, number>();
@@ -242,12 +213,10 @@ export class RateLimitMiddleware implements Middleware {
 		};
 	}
 
-	// Réinitialiser les compteurs
 	reset(): void {
 		this.eventCounts.clear();
 	}
 
-	// Nettoyer les ressources
 	dispose(): void {
 		if (this.cleanupInterval) {
 			clearInterval(this.cleanupInterval);
@@ -256,24 +225,21 @@ export class RateLimitMiddleware implements Middleware {
 	}
 }
 
-
-// PERFORMANCE MONITORING - Mesurer les performances
+// PERFORMANCE MONITORING
 export class PerformanceMiddleware implements Middleware {
 	name = 'performance';
 	private metrics = new Map<EventNames, PerformanceMetric>();
 
-	async before(event: Event<any>): Promise<Event<any>> {
-		// Marquer le début du traitement
-		(event as any).__startTime = performance.now();
-		return event;
-	}
-
-	async after(event: Event<any>): Promise<void> {
-		const startTime = (event as any).__startTime;
-		if (startTime) {
+	process(event: Event<any>): Event<any> {
+		const startTime = performance.now();
+		
+		// Ajouter un hook de fin de traitement
+		setImmediate(() => {
 			const duration = performance.now() - startTime;
 			this.recordMetric(event.type, duration);
-		}
+		});
+
+		return event;
 	}
 
 	private recordMetric(eventType: EventNames, duration: number): void {
@@ -294,25 +260,20 @@ export class PerformanceMiddleware implements Middleware {
 		this.metrics.set(eventType, current);
 	}
 
-	// Obtenir les métriques de performance
 	getMetrics(): Map<EventNames, PerformanceMetric> {
 		return new Map(this.metrics);
 	}
 
-	// Obtenir les métriques pour un type d'événement spécifique
 	getMetricsForEvent(eventType: EventNames): PerformanceMetric | undefined {
 		return this.metrics.get(eventType);
 	}
 
-	// Réinitialiser les métriques
 	reset(): void {
 		this.metrics.clear();
 	}
 }
 
-
 // INTERFACES ET TYPES
-// Interface pour logger personnalisé
 export interface Logger {
 	info(message: string): void;
 	warn(message: string): void;
@@ -320,10 +281,7 @@ export interface Logger {
 	debug?(message: string): void;
 }
 
-// Options pour le logging middleware
 export interface LoggingOptions {
-	logBefore?: boolean;
-	logAfter?: boolean;
 	includePayload?: boolean;
 	logLevel?: LogLevel;
 	sanitizePayload?: (payload: any) => any;
@@ -331,9 +289,8 @@ export interface LoggingOptions {
 
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
-// Interface pour les validateurs
 export interface EventValidator<T> {
-	validate(payload: T): Promise<ValidationResult> | ValidationResult;
+	validate(payload: T): ValidationResult;
 }
 
 export interface ValidationResult {
@@ -341,12 +298,11 @@ export interface ValidationResult {
 	errors: string[];
 }
 
-// Configuration pour rate limiting
 export interface RateLimitConfig {
-	maxEvents: number;                              // Nombre maximum d'événements
-	windowMs: number;                               // Fenêtre de temps en ms
-	keyExtractor?: (event: Event<any>) => string;  // Comment identifier les "utilisateurs"
-	minInterval?: number;                           // Délai minimum entre événements (ms)
+	maxEvents: number;
+	windowMs: number;
+	keyExtractor?: (event: Event<any>) => string;
+	minInterval?: number;
 }
 
 interface EventCountInfo {
@@ -362,7 +318,6 @@ export interface RateLimitStats {
 	maxEvents: number;
 }
 
-// Métriques de performance
 export interface PerformanceMetric {
 	count: number;
 	totalDuration: number;
@@ -370,7 +325,6 @@ export interface PerformanceMetric {
 	maxDuration: number;
 	avgDuration: number;
 }
-
 
 // ERREURS PERSONNALISÉES
 export class ValidationError extends Error {
@@ -397,9 +351,7 @@ export class RateLimitError extends Error {
 	}
 }
 
-
 // VALIDATEURS PRÊTS À L'EMPLOI
-// Validateur pour les événements user:login
 export const userLoginValidator: EventValidator<EventRegistry['user:login']> = {
 	validate: (payload) => {
 		const errors: string[] = [];
@@ -425,7 +377,6 @@ export const userLoginValidator: EventValidator<EventRegistry['user:login']> = {
 	}
 };
 
-// Validateur pour les événements order:created
 export const orderCreatedValidator: EventValidator<EventRegistry['order:created']> = {
 	validate: (payload) => {
 		const errors: string[] = [];
@@ -452,36 +403,3 @@ export const orderCreatedValidator: EventValidator<EventRegistry['order:created'
 		};
 	}
 };
-
-
-// EXEMPLE D'UTILISATION
-/*
-// Créer et configurer les middleware
-const loggingMiddleware = new LoggingMiddleware(console, {
-	includePayload: true,
-	logLevel: 'info'
-});
-
-const validationMiddleware = new ValidationMiddleware();
-validationMiddleware.addValidator('user:login', userLoginValidator);
-validationMiddleware.addValidator('order:created', orderCreatedValidator);
-
-const rateLimitMiddleware = new RateLimitMiddleware({
-	maxEvents: 10,
-	windowMs: 60000, // 10 événements par minute
-	keyExtractor: (event) => {
-		const payload = event.payload as any;
-		return payload.userId || event.source || 'anonymous';
-	}
-});
-
-const performanceMiddleware = new PerformanceMiddleware();
-
-// Ajouter à l'émetteur (on verra ça dans la prochaine étape)
-emitter.use(loggingMiddleware);
-emitter.use(validationMiddleware);
-emitter.use(rateLimitMiddleware);
-emitter.use(performanceMiddleware);
-
-// Les événements seront automatiquement validés, logués et rate-limités !
-*/

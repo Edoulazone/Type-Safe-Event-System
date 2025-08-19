@@ -4,10 +4,12 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "test": "node dist/tests/test-observables.js",
-    "test:ts": "ts-node --esm src/tests/test-observables.ts",
-    "dev": "npm run build && node dist/examples/demo.js",
-    "validate": "npm run build && node dist/tests/validate-system.js"
+    "test": "node --loader ts-node/esm src/tests/validate-system.ts",
+    "test:middleware": "node --loader ts-node/esm src/tests/test-middleware.ts",
+    "test:plugins": "node --loader ts-node/esm src/tests/test-plugins.ts",
+    "test:observables": "node --loader ts-node/esm src/tests/test-observables.ts",
+    "dev": "node --loader ts-node/esm src/examples/demo.ts",
+    "validate": "npm run test"
   },
   "devDependencies": {
     "typescript": "^5.0.0",

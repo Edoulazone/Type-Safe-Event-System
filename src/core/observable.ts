@@ -1,7 +1,7 @@
-import { Event, EventNames, EventListener, Subscription } from './types.js';
+import { Event, EventNames, EventListener, Subscription } from './types';
 
 /**
- * Observer pattern optimisé pour les événements
+ * Observer pattern simplifié pour les événements
  */
 export interface Observer<T> {
 	next?(value: T): void;
@@ -10,19 +10,22 @@ export interface Observer<T> {
 }
 
 /**
- * Observable spécialisé pour les événements avec opérateurs avancés
- * Performance: Optimisé pour high-throughput et low-latency
+ * Observable spécialisé pour les événements
+ * Garde seulement les opérateurs essentiels pour les performances
  */
 export class EventObservable<T extends EventNames = EventNames> {
-	private readonly observers = new Set<Observer<Event<T>>>();
+	private observers = new Set<Observer<Event<T>>>();
 	private isCompleted = false;
 	private hasError = false;
-	private readonly subscriptionIds = new WeakMap<Observer<Event<T>>, string>();
 
 	/**
-	 * Souscrit à l'observable avec gestion automatique des erreurs
+	 * Souscrit à l'observable
 	 */
 	subscribe(observer: EventListener<T> | Observer<Event<T>>): Subscription {
+		if (this.isCompleted || this.hasError) {
+			throw new Error('Cannot subscribe to completed or errored observable');
+		}
+
 		const observerObj = typeof observer === 'function' 
 			? { next: observer } 
 			: observer;
@@ -30,12 +33,10 @@ export class EventObservable<T extends EventNames = EventNames> {
 		this.observers.add(observerObj);
 		
 		const subscriptionId = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-		this.subscriptionIds.set(observerObj, subscriptionId);
 
 		return {
 			unsubscribe: () => {
 				this.observers.delete(observerObj);
-				this.subscriptionIds.delete(observerObj);
 			},
 			closed: this.isCompleted || this.hasError,
 			listenerId: subscriptionId
@@ -43,15 +44,9 @@ export class EventObservable<T extends EventNames = EventNames> {
 	}
 
 	/**
-	 * OPÉRATEUR : FILTER - Filtrer les événements avec type narrowing
+	 * OPÉRATEUR : FILTER - Filtrer les événements
 	 */
-	filter<U extends T>(
-		predicate: (event: Event<T>) => event is Event<U>
-	): EventObservable<U>;
-	filter(
-		predicate: (event: Event<T>) => boolean
-	): EventObservable<T>;
-	filter(predicate: any): any {
+	filter(predicate: (event: Event<T>) => boolean): EventObservable<T> {
 		const filtered = new EventObservable<T>();
 		
 		this.subscribe({
@@ -94,7 +89,7 @@ export class EventObservable<T extends EventNames = EventNames> {
 	}
 
 	/**
-	 * OPÉRATEUR: take - Limite le nombre d'événements
+	 * OPÉRATEUR: TAKE - Limite le nombre d'événements
 	 */
 	take(count: number): EventObservable<T> {
 		if (count <= 0) {
@@ -125,7 +120,7 @@ export class EventObservable<T extends EventNames = EventNames> {
 	}
 
 	/**
-	 * OPÉRATEUR: skip - Ignore les premiers événements
+	 * OPÉRATEUR: SKIP - Ignore les premiers événements
 	 */
 	skip(count: number): EventObservable<T> {
 		const skipped = new EventObservable<T>();
@@ -147,7 +142,7 @@ export class EventObservable<T extends EventNames = EventNames> {
 	}
 
 	/**
-	 * OPÉRATEUR: debounce - Anti-spam avec timing précis
+	 * OPÉRATEUR: DEBOUNCE - Anti-spam simplifié
 	 */
 	debounce(delayMs: number): EventObservable<T> {
 		const debounced = new EventObservable<T>();
@@ -192,233 +187,6 @@ export class EventObservable<T extends EventNames = EventNames> {
 	}
 
 	/**
-	 * OPÉRATEUR: throttle - Limite la fréquence d'émission
-	 */
-	throttle(intervalMs: number): EventObservable<T> {
-		const throttled = new EventObservable<T>();
-		let lastEmission = 0;
-		let pendingTimeout: ReturnType<typeof setTimeout> | null = null;
-
-		this.subscribe({
-			next: (event) => {
-				const now = Date.now();
-				const timeSinceLastEmission = now - lastEmission;
-
-				if (timeSinceLastEmission >= intervalMs) {
-					// Émettre immédiatement
-					throttled.next(event);
-					lastEmission = now;
-				} else if (!pendingTimeout) {
-					// Programmer la prochaine émission
-					const delay = intervalMs - timeSinceLastEmission;
-					pendingTimeout = setTimeout(() => {
-						throttled.next(event);
-						lastEmission = Date.now();
-						pendingTimeout = null;
-					}, delay);
-				}
-			},
-			error: (error) => {
-				if (pendingTimeout) {
-					clearTimeout(pendingTimeout);
-					pendingTimeout = null;
-				}
-				throttled.error(error);
-			},
-			complete: () => {
-				if (pendingTimeout) {
-					clearTimeout(pendingTimeout);
-				}
-				throttled.complete();
-			}
-		});
-
-		return throttled;
-	}
-
-	/**
-	 * OPÉRATEUR: distinct - Évite les doublons avec cache efficace
-	 */
-	distinct<K>(keySelector?: (event: Event<T>) => K): EventObservable<T> {
-		const distinctStream = new EventObservable<T>();
-		const seenKeys = new Set<K | string>();
-
-		this.subscribe({
-			next: (event) => {
-				const key = keySelector ? keySelector(event) : event.id;
-				
-				if (!seenKeys.has(key)) {
-					seenKeys.add(key);
-					distinctStream.next(event);
-				}
-			},
-			error: (error) => distinctStream.error(error),
-			complete: () => distinctStream.complete()
-		});
-
-		return distinctStream;
-	}
-
-	/**
-	 * OPÉRATEUR: distinctUntilChanged - Évite les doublons consécutifs
-	 */
-	distinctUntilChanged<K>(keySelector?: (event: Event<T>) => K): EventObservable<T> {
-		const distinctStream = new EventObservable<T>();
-		let lastKey: K | string | undefined;
-
-		this.subscribe({
-			next: (event) => {
-				const key = keySelector ? keySelector(event) : event.id;
-				
-				if (key !== lastKey) {
-					lastKey = key;
-					distinctStream.next(event);
-				}
-			},
-			error: (error) => distinctStream.error(error),
-			complete: () => distinctStream.complete()
-		});
-
-		return distinctStream;
-	}
-
-	/**
-	 * OPÉRATEUR: buffer - Groupe les événements par taille
-	 */
-	buffer(size: number): Observable<Event<T>[]> {
-		const buffered = new Observable<Event<T>[]>();
-		const buffer: Event<T>[] = [];
-
-		this.subscribe({
-			next: (event) => {
-				buffer.push(event);
-				
-				if (buffer.length >= size) {
-					buffered.next([...buffer]);
-					buffer.length = 0;
-				}
-			},
-			error: (error) => buffered.error(error),
-			complete: () => {
-				if (buffer.length > 0) {
-					buffered.next([...buffer]);
-				}
-				buffered.complete();
-			}
-		});
-
-		return buffered;
-	}
-
-	/**
-	 * OPÉRATEUR: bufferTime - Groupe les événements par temps
-	 */
-	bufferTime(timeMs: number): Observable<Event<T>[]> {
-		const buffered = new Observable<Event<T>[]>();
-		const buffer: Event<T>[] = [];
-		
-		const intervalId = setInterval(() => {
-			if (buffer.length > 0) {
-				buffered.next([...buffer]);
-				buffer.length = 0;
-			}
-		}, timeMs);
-
-		this.subscribe({
-			next: (event) => {
-				buffer.push(event);
-			},
-			error: (error) => {
-				clearInterval(intervalId);
-				buffered.error(error);
-			},
-			complete: () => {
-				clearInterval(intervalId);
-				if (buffer.length > 0) {
-					buffered.next([...buffer]);
-				}
-				buffered.complete();
-			}
-		});
-
-		return buffered;
-	}
-
-	/**
-	 * OPÉRATEUR: scan - Accumulation avec état
-	 */
-	scan<A>(accumulator: (acc: A, event: Event<T>) => A, seed: A): Observable<A> {
-		const scanned = new Observable<A>();
-		let accumulated = seed;
-
-		this.subscribe({
-			next: (event) => {
-				try {
-					accumulated = accumulator(accumulated, event);
-					scanned.next(accumulated);
-				} catch (error) {
-					scanned.error(error as Error);
-				}
-			},
-			error: (error) => scanned.error(error),
-			complete: () => scanned.complete()
-		});
-
-		return scanned;
-	}
-
-	/**
-	 * OPÉRATEUR: combineWith - Combine avec d'autres streams
-	 */
-	combineWith<U extends EventNames>(
-		other: EventObservable<U>
-	): EventObservable<T | U> {
-		const combined = new EventObservable<T | U>();
-		let completed = 0;
-
-		const onComplete = () => {
-			completed++;
-			if (completed === 2) {
-				combined.complete();
-			}
-		};
-
-		this.subscribe({
-			next: (event) => combined.next(event),
-			error: (error) => combined.error(error),
-			complete: onComplete
-		});
-
-		other.subscribe({
-			next: (event) => combined.next(event),
-			error: (error) => combined.error(error),
-			complete: onComplete
-		});
-
-		return combined;
-	}
-
-	/**
-	 * OPÉRATEUR: startWith - Commence avec des valeurs initiales
-	 */
-	startWith(...events: Event<T>[]): EventObservable<T> {
-		const started = new EventObservable<T>();
-
-		// Émettre les valeurs initiales de manière asynchrone
-		setImmediate(() => {
-			events.forEach(event => started.next(event));
-		});
-
-		this.subscribe({
-			next: (event) => started.next(event),
-			error: (error) => started.error(error),
-			complete: () => started.complete()
-		});
-
-		return started;
-	}
-
-	/**
 	 * Conversion vers Promise (premier événement)
 	 */
 	toPromise(): Promise<Event<T>> {
@@ -445,26 +213,9 @@ export class EventObservable<T extends EventNames = EventNames> {
 		});
 	}
 
-	/**
-	 * Collecte tous les événements en array
-	 */
-	toArray(): Promise<Event<T>[]> {
-		return new Promise((resolve, reject) => {
-			const events: Event<T>[] = [];
-
-			this.subscribe({
-				next: (event) => events.push(event),
-				error: (error) => reject(error),
-				complete: () => resolve(events)
-			});
-		});
-	}
-
 	// MÉTHODES INTERNES
 	next(event: Event<T>): void {
 		if (this.isCompleted || this.hasError) return;
-
-		// Optimisation: copier la liste pour éviter les modifications concurrentes
 		const observersCopy = Array.from(this.observers);
 		
 		for (const observer of observersCopy) {
@@ -525,7 +276,7 @@ export class EventObservable<T extends EventNames = EventNames> {
  * Observable générique pour valeurs transformées
  */
 export class Observable<T> {
-	private readonly observers = new Set<Observer<T>>();
+	private observers = new Set<Observer<T>>();
 	private isCompleted = false;
 	private hasError = false;
 
@@ -591,7 +342,7 @@ export class Observable<T> {
 	}
 }
 
-// FONCTIONS UTILITAIRES - Factory et combinaison
+// FONCTIONS UTILITAIRES
 export function fromEvents<T extends EventNames>(events: Event<T>[]): EventObservable<T> {
 	const stream = new EventObservable<T>();
 	
@@ -603,67 +354,6 @@ export function fromEvents<T extends EventNames>(events: Event<T>[]): EventObser
 	});
 	
 	return stream;
-}
-
-export function fromPromise<T>(promise: Promise<T>): Observable<T> {
-	const observable = new Observable<T>();
-	
-	promise
-		.then(value => {
-			observable.next(value);
-			observable.complete();
-		})
-		.catch(error => observable.error(error));
-	
-	return observable;
-}
-
-export function interval(ms: number): Observable<number> {
-	const observable = new Observable<number>();
-	let count = 0;
-	let isDisposed = false;
-	
-	const intervalId = setInterval(() => {
-		if (!isDisposed) {
-			observable.next(count++);
-		}
-	}, ms);
-	
-	// Cleanup lors de la completion
-	const originalComplete = observable.complete.bind(observable);
-	observable.complete = () => {
-		isDisposed = true;
-		clearInterval(intervalId);
-		originalComplete();
-	};
-	
-	return observable;
-}
-
-export function timer(delayMs: number, intervalMs?: number): Observable<number> {
-	const observable = new Observable<number>();
-	let count = 0;
-	
-	const timeoutId = setTimeout(() => {
-		observable.next(count++);
-		
-		if (intervalMs) {
-			const intervalId = setInterval(() => {
-				observable.next(count++);
-			}, intervalMs);
-			
-			// Cleanup automatique
-			const originalComplete = observable.complete.bind(observable);
-			observable.complete = () => {
-				clearInterval(intervalId);
-				originalComplete();
-			};
-		} else {
-			observable.complete();
-		}
-	}, delayMs);
-	
-	return observable;
 }
 
 export function merge<T extends EventNames>(...streams: EventObservable<T>[]): EventObservable<T> {
@@ -689,29 +379,4 @@ export function merge<T extends EventNames>(...streams: EventObservable<T>[]): E
 	});
 	
 	return merged;
-}
-
-export function race<T extends EventNames>(...streams: EventObservable<T>[]): EventObservable<T> {
-	const raced = new EventObservable<T>();
-	let isResolved = false;
-	
-	streams.forEach(stream => {
-		stream.subscribe({
-			next: (event) => {
-				if (!isResolved) {
-					isResolved = true;
-					raced.next(event);
-					raced.complete();
-				}
-			},
-			error: (error) => {
-				if (!isResolved) {
-					isResolved = true;
-					raced.error(error);
-				}
-			}
-		});
-	});
-	
-	return raced;
 }

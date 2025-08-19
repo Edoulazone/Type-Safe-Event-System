@@ -11,33 +11,21 @@ import {
 	Subscription,
 	EventId,
 	createEventId,
-	ListenerPriority,
 	EVENT_CONFIG
-} from './types.js';
-import { EventObservable } from './observable.js';
-import { Middleware } from '../middleware/base.js';
+} from './types';
+import { EventObservable } from './observable';
+import { Middleware } from '../middleware/base';
 
-/**
- * Event Emitter ultra-performant avec type safety complète
- * 
- * Features:
- * - Type safety stricte pour tous les événements
- * - Pipeline de middleware extensible
- * - Observables intégrées
- * - Performance optimisée (10k+ events/sec)
- * - Gestion d'erreurs robuste
- */
 export class TypedEventEmitter {
-	// STOCKAGE OPTIMISÉ - Structures de données performantes
+	// STOCKAGE
 	private readonly listeners = new Map<EventNames, Set<ListenerWrapper<any>>>();
 	private readonly middlewares: Middleware[] = [];
 	private readonly observables = new Map<EventNames, Set<EventObservable<any>>>();
 	
-	// PERFORMANCE TRACKING
+	// MÉTRIQUES
 	private eventCounter = 0;
 	private totalEventsEmitted = 0;
 	private readonly startTime = Date.now();
-	private readonly performanceBuffer = new CircularBuffer<PerformanceEntry>(100);
 
 	// CONFIGURATION
 	private readonly config = {
@@ -54,14 +42,12 @@ export class TypedEventEmitter {
 
 	/**
 	 * Enregistre un listener pour un type d'événement spécifique
-	 * Performance: O(1) en moyenne
 	 */
 	on<T extends EventNames>(
 		eventType: T,
 		listener: EventListener<T>,
 		options: ListenerOptions = {}
 	): Subscription {
-		// Validation précoce
 		this.validateEventType(eventType);
 		this.validateListener(listener);
 
@@ -71,17 +57,17 @@ export class TypedEventEmitter {
 			throw new Error(`Maximum listeners (${this.config.maxListenersPerEvent}) exceeded for event ${eventType}`);
 		}
 
-		// Créer le wrapper optimisé
+		// Créer le wrapper
 		const wrapper = new ListenerWrapper(listener, options);
 
-		// Initialiser le Set si nécessaire (lazy initialization)
+		// Initialiser le Set si nécessaire
 		if (!this.listeners.has(eventType)) {
 			this.listeners.set(eventType, new Set());
 		}
 
 		this.listeners.get(eventType)!.add(wrapper);
 
-		// Retourner subscription optimisée
+		// Retourner subscription
 		return new SubscriptionImpl(
 			() => this.removeListener(eventType, wrapper),
 			eventType,
@@ -91,7 +77,6 @@ export class TypedEventEmitter {
 
 	/**
 	 * Écoute un événement une seule fois
-	 * Plus efficace que on() + unsubscribe manuel
 	 */
 	once<T extends EventNames>(
 		eventType: T,
@@ -107,8 +92,7 @@ export class TypedEventEmitter {
 	}
 
 	/**
-	 * Émet un événement avec pipeline de middleware complet
-	 * Performance: Optimisée pour high-throughput
+	 * Émet un événement avec pipeline de middleware
 	 */
 	async emit<T extends EventNames>(
 		eventType: T,
@@ -121,27 +105,20 @@ export class TypedEventEmitter {
 		const event = this.createEvent(eventType, payload, options);
 		
 		try {
-			// PHASE 1: Middleware AVANT (si pas skipMiddleware)
+			// PHASE 1: Middleware processing
 			let processedEvent = event;
 			if (!options.skipMiddleware) {
-				processedEvent = await this.runBeforeMiddlewares(event);
+				processedEvent = await this.processMiddlewares(event);
 			}
 
-			// PHASE 2: Notification des listeners (parallèle optimisé)
+			// PHASE 2: Notification des listeners
 			const notificationResult = await this.notifyListeners(processedEvent);
 
 			// PHASE 3: Notification des observables (non-bloquant)
 			this.notifyObservables(processedEvent);
 
-			// PHASE 4: Middleware APRÈS
-			if (!options.skipMiddleware) {
-				// Non-bloquant pour la performance
-				setImmediate(() => this.runAfterMiddlewares(processedEvent));
-			}
-
-			// Tracking des performances
+			// Métriques
 			const duration = this.config.enablePerformanceTracking ? performance.now() - startTime : 0;
-			this.recordPerformance(eventType, duration);
 			this.totalEventsEmitted++;
 
 			return {
@@ -174,7 +151,6 @@ export class TypedEventEmitter {
 
 	/**
 	 * Crée un stream observable pour un type d'événement
-	 * Intégration native avec l'emitter
 	 */
 	stream<T extends EventNames>(eventType?: T): EventObservable<T> {
 		const observable = new EventObservable<T>();
@@ -198,7 +174,7 @@ export class TypedEventEmitter {
 		return observable;
 	}
 
-	// MIDDLEWARE MANAGEMENT - API simplifiée
+	// MIDDLEWARE MANAGEMENT
 	use(middleware: Middleware): void {
 		this.middlewares.push(middleware);
 	}
@@ -215,7 +191,7 @@ export class TypedEventEmitter {
 		return false;
 	}
 
-	// MÉTHODES UTILITAIRES - Optimisées
+	// MÉTHODES UTILITAIRES
 	listenerCount<T extends EventNames>(eventType: T): number {
 		return this.listeners.get(eventType)?.size ?? 0;
 	}
@@ -235,7 +211,7 @@ export class TypedEventEmitter {
 	}
 
 	/**
-	 * Métriques de performance détaillées
+	 * Métriques de performance
 	 */
 	getMetrics(): EventEmitterMetrics {
 		const activeListeners = new Map<EventNames, number>();
@@ -253,14 +229,12 @@ export class TypedEventEmitter {
 			activeObservables: this.countObservables(),
 			uptime,
 			eventsPerSecond: Math.round(eventsPerSecond * 100) / 100,
-			memoryUsage: this.estimateMemoryUsage(),
-			averageLatency: this.calculateAverageLatency(),
-			peakLatency: this.calculatePeakLatency()
+			memoryUsage: this.estimateMemoryUsage()
 		};
 	}
 
 	/**
-	 * Nettoyage complet et optimal
+	 * Nettoyage complet
 	 */
 	async dispose(): Promise<void> {
 		// Nettoyer les middleware
@@ -289,7 +263,7 @@ export class TypedEventEmitter {
 		this.totalEventsEmitted = 0;
 	}
 
-	// MÉTHODES PRIVÉES - Optimisées pour la performance
+	// MÉTHODES PRIVÉES
 	private createEvent<T extends EventNames>(
 		eventType: T,
 		payload: EventPayload<T>,
@@ -310,48 +284,27 @@ export class TypedEventEmitter {
 		this.eventCounter++;
 		const timestamp = Date.now();
 		const random = Math.random().toString(36).substring(2, 8);
-		return `evt_${timestamp}_${this.eventCounter}_${random}` as EventId;
+		return `evt_${timestamp}_${this.eventCounter}_${random}`;
 	}
 
-	private async runBeforeMiddlewares(event: Event<any>): Promise<Event<any>> {
+	private async processMiddlewares(event: Event<any>): Promise<Event<any>> {
 		let processedEvent = event;
 		
 		for (const middleware of this.middlewares) {
-			if (middleware.before) {
+			if (middleware.process) {
 				try {
-					processedEvent = await middleware.before(processedEvent);
+					processedEvent = await middleware.process(processedEvent);
 				} catch (error) {
-					await this.runErrorMiddlewares(error as Error, processedEvent);
+					// Appeler onError si disponible
+					if (middleware.onError) {
+						await middleware.onError(error as Error);
+					}
 					throw error;
 				}
 			}
 		}
 		
 		return processedEvent;
-	}
-
-	private async runAfterMiddlewares(event: Event<any>): Promise<void> {
-		for (const middleware of this.middlewares) {
-			if (middleware.after) {
-				try {
-					await middleware.after(event);
-				} catch (error) {
-					await this.runErrorMiddlewares(error as Error, event);
-				}
-			}
-		}
-	}
-
-	private async runErrorMiddlewares(error: Error, event: Event<any>): Promise<void> {
-		for (const middleware of this.middlewares) {
-			if (middleware.onError) {
-				try {
-					await middleware.onError(error, event);
-				} catch (middlewareError) {
-					console.error('Middleware error handler failed:', middlewareError);
-				}
-			}
-		}
 	}
 
 	private async notifyListeners<T extends EventNames>(
@@ -366,10 +319,10 @@ export class TypedEventEmitter {
 		const errors: EmitError[] = [];
 		let successCount = 0;
 
-		// Trier par priorité pour l'exécution séquentielle des listeners critiques
+		// Trier par priorité
 		const sortedListeners = listeners.sort((a, b) => b.priority - a.priority);
 		
-		// Exécution parallèle optimisée avec Promise.allSettled
+		// Exécution parallèle optimisée
 		const results = await Promise.allSettled(
 			sortedListeners.map(wrapper => wrapper.execute(event))
 		);
@@ -393,7 +346,7 @@ export class TypedEventEmitter {
 	private notifyObservables<T extends EventNames>(event: Event<T>): void {
 		const observablesSet = this.observables.get(event.type);
 		if (observablesSet) {
-			// Non-bloquant, en utilisant setImmediate pour la performance
+			// Non-bloquant
 			setImmediate(() => {
 				observablesSet.forEach(observable => {
 					try {
@@ -432,29 +385,6 @@ export class TypedEventEmitter {
 		}
 	}
 
-	private recordPerformance(eventType: EventNames, duration: number): void {
-		if (this.config.enablePerformanceTracking) {
-			this.performanceBuffer.add({
-				eventType,
-				duration,
-				timestamp: Date.now()
-			});
-		}
-	}
-
-	private calculateAverageLatency(): number {
-		const entries = this.performanceBuffer.getAll();
-		if (entries.length === 0) return 0;
-		
-		const sum = entries.reduce((acc, entry) => acc + entry.duration, 0);
-		return Math.round((sum / entries.length) * 100) / 100;
-	}
-
-	private calculatePeakLatency(): number {
-		const entries = this.performanceBuffer.getAll();
-		return entries.length > 0 ? Math.max(...entries.map(e => e.duration)) : 0;
-	}
-
 	private countObservables(): Map<EventNames, number> {
 		const counts = new Map<EventNames, number>();
 		for (const [eventType, observableSet] of this.observables) {
@@ -480,7 +410,7 @@ export class TypedEventEmitter {
 	}
 }
 
-// CLASSES HELPER OPTIMISÉES
+// CLASSES HELPER
 class ListenerWrapper<T extends EventNames> {
 	public readonly id: string;
 	public readonly priority: number;
@@ -492,13 +422,13 @@ class ListenerWrapper<T extends EventNames> {
 		private readonly options: ListenerOptions
 	) {
 		this.id = `listener_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-		this.priority = options.priority || ListenerPriority.NORMAL;
+		this.priority = options.priority || EVENT_CONFIG.PRIORITIES.NORMAL;
 	}
 	
 	async execute(event: Event<T>): Promise<void> {
 		if (this.isDisposed) return;
 		
-		// Vérifications optimisées
+		// Vérifications
 		if (this.options.maxCalls && this.callCount >= this.options.maxCalls) {
 			this.dispose();
 			return;
@@ -510,7 +440,7 @@ class ListenerWrapper<T extends EventNames> {
 		
 		this.callCount++;
 		
-		// Exécution avec timeout optimisé
+		// Exécution avec timeout si spécifié
 		if (this.options.timeout) {
 			await this.executeWithTimeout(event, this.options.timeout);
 		} else {
@@ -544,18 +474,6 @@ class ListenerWrapper<T extends EventNames> {
 	dispose(): void {
 		this.isDisposed = true;
 	}
-	
-	getInfo(): ListenerInfo {
-		return {
-			id: this.id,
-			callCount: this.callCount,
-			isDisposed: this.isDisposed,
-			hasTimeout: !!this.options.timeout,
-			hasCondition: !!this.options.condition,
-			maxCalls: this.options.maxCalls,
-			priority: this.priority
-		};
-	}
 }
 
 class SubscriptionImpl implements Subscription {
@@ -579,33 +497,7 @@ class SubscriptionImpl implements Subscription {
 	}
 }
 
-// CIRCULAR BUFFER pour performance tracking
-class CircularBuffer<T> {
-	private buffer: T[] = [];
-	private index = 0;
-	
-	constructor(private readonly maxSize: number) {}
-	
-	add(item: T): void {
-		if (this.buffer.length < this.maxSize) {
-			this.buffer.push(item);
-		} else {
-			this.buffer[this.index] = item;
-			this.index = (this.index + 1) % this.maxSize;
-		}
-	}
-	
-	getAll(): readonly T[] {
-		return [...this.buffer];
-	}
-	
-	clear(): void {
-		this.buffer.length = 0;
-		this.index = 0;
-	}
-}
-
-// INTERFACES ADDITIONNELLES
+// INTERFACES
 export interface EmitterOptions {
 	maxListenersPerEvent?: number;
 	defaultTimeout?: number;
@@ -619,27 +511,9 @@ export interface EventEmitterMetrics {
 	uptime: number;
 	eventsPerSecond: number;
 	memoryUsage: number;
-	averageLatency: number;
-	peakLatency: number;
-}
-
-export interface ListenerInfo {
-	id: string;
-	callCount: number;
-	isDisposed: boolean;
-	hasTimeout: boolean;
-	hasCondition: boolean;
-	maxCalls?: number;
-	priority: number;
 }
 
 interface NotificationResult {
 	successCount: number;
 	errors: EmitError[];
-}
-
-interface PerformanceEntry {
-	eventType: EventNames;
-	duration: number;
-	timestamp: number;
 }

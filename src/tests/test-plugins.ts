@@ -1,9 +1,9 @@
-import { TypedEventEmitter } from '../core/emitter.js';
+import { TypedEventEmitter } from '../core/emitter.ts';
 import { 
 	PluginRegistry, 
 	PersistencePlugin, 
 	AnalyticsPlugin 
-} from '../plugins/plugins.js';
+} from '../plugins/plugins.ts';
 
 async function testPlugins() {
 	console.log('🔌 Testing Plugin System...\n');

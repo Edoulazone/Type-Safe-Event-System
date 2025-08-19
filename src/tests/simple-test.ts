@@ -1,4 +1,4 @@
-import { TypedEventEmitter } from '../core/emitter.js';
+import { TypedEventEmitter } from '../core/emitter.ts';
 
 async function simpleTest() {
 	console.log('🚀 Simple Test...');

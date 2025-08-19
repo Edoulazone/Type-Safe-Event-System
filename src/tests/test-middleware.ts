@@ -1,4 +1,4 @@
-import { TypedEventEmitter } from '../core/emitter.js';
+import { TypedEventEmitter } from '../core/emitter.ts';
 import { 
 	LoggingMiddleware, 
 	ValidationMiddleware, 
@@ -6,7 +6,7 @@ import {
 	PerformanceMiddleware,
 	userLoginValidator,
 	orderCreatedValidator
-} from '../middleware/base.js';
+} from '../middleware/base.ts';
 
 async function testMiddleware() {
 	console.log('🛡️ Testing Middleware System...\n');

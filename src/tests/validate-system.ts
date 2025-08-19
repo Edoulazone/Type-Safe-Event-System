@@ -3,9 +3,9 @@
  * Vérifie que tous les composants fonctionnent correctement
  */
 
-import { TypedEventEmitter } from '../core/emitter.js';
-import { PluginRegistry, PersistencePlugin, AnalyticsPlugin } from '../plugins/plugins.js';
-import { LoggingMiddleware, ValidationMiddleware } from '../middleware/base.js';
+import { TypedEventEmitter } from '../core/emitter.ts';
+import { PluginRegistry, PersistencePlugin, AnalyticsPlugin } from '../plugins/plugins.ts';
+import { LoggingMiddleware, ValidationMiddleware } from '../middleware/base.ts';
 
 async function validateSystem(): Promise<void> {
 	console.log('🔍 Validating Type-Safe Event System...\n');
