@@ -468,13 +468,6 @@ Ce projet te permet de maîtriser :
 - Error handling patterns
 - Testing strategies
 - API design
-
-### Compétences Professionnelles
-- Code documentation
-- Project structure
-- Git workflow
-- CI/CD setup
-
 ---
 
 **Développé avec TypeScript 5.0+**
